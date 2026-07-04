@@ -76,7 +76,7 @@ series:
     - { id: T10Y3M, name: "US 3m10y slope (recession signal)", region: US, freq: D, transform: level }
     - { id: DFII5,  name: "US 5y real yield (TIPS)",  region: US, freq: D, transform: level }
     - { id: DFII10, name: "US 10y real yield (TIPS)", region: US, freq: D, transform: level }
-    - { id: ACMTP10, name: "US 10y term premium (ACM)", region: US, freq: D, transform: level, verify: true }
+    - { id: THREEFYTP10, name: "US 10y term premium (Kim-Wright)", region: US, freq: D, transform: level }
 
   # ----------------------------------------------------------------------------
   # INTERNATIONAL SOVEREIGN YIELDS  (OECD via FRED — MONTHLY only)
