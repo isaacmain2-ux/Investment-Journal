@@ -4,7 +4,7 @@
 
 - Gold tables built: **6**
 - Reconciliation (analytics vs staging): **MATCH**
-- Current regime: **Growth Below-trend · Inflation Above-trend · Loose**
+- Current regime: **Growth Neutral · Inflation Above-trend · Conditions Loose**
 
 ## Tables
 

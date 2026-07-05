@@ -28,11 +28,19 @@ CONDITIONS = ["NFCI"]                           # positive = tighter conditions
 SNAPSHOT_SERIES = ["DGS2", "DGS10", "BAMLC0A0CM", "BAMLH0A0HYM2",
                    "VIXCLS", "DTWEXBGS", "DCOILWTICO"]
 
+# axis magnitude below which a reading is treated as "at trend" rather than
+# above/below — avoids over-reading a near-zero axis as a directional call.
+NEUTRAL_BAND = 0.25
 
-def _state(x, pos_label, neg_label):
+
+def _state(x, pos_label, neg_label, mid_label="Neutral"):
     if pd.isna(x):
         return None
-    return pos_label if x > 0 else neg_label
+    if x > NEUTRAL_BAND:
+        return pos_label
+    if x < -NEUTRAL_BAND:
+        return neg_label
+    return mid_label
 
 
 def compute(analytics_df: pd.DataFrame):
@@ -72,7 +80,7 @@ def compute(analytics_df: pd.DataFrame):
         if None in (r["growth_state"], r["inflation_state"], r["conditions_state"]):
             return None
         return (f"Growth {r['growth_state']} \u00b7 Inflation {r['inflation_state']} "
-                f"\u00b7 {r['conditions_state']}")
+                f"\u00b7 Conditions {r['conditions_state']}")
     regime["regime_label"] = regime.apply(_label, axis=1)
 
     # --- daily snapshot ---
