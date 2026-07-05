@@ -1,8 +1,8 @@
 """Test for 01_series_analytics.sql.
 
-Runs the actual transform SQL in an in-memory DuckDB against a small, known
-fixture and asserts the computed columns. Skips cleanly if duckdb isn't
-installed (it is on the project machine).
+Runs the actual transform SQL in an in-memory DuckDB against small, known
+fixtures and asserts the computed columns - including the intended-transform
+driven primary_value / primary_zscore. Skips if duckdb isn't installed.
 """
 import statistics
 from pathlib import Path
@@ -15,7 +15,14 @@ SQL = Path("src/transform/sql/01_series_analytics.sql").read_text(encoding="utf-
 
 
 def _statements(text):
-    return [s.strip() for s in text.split(";") if s.strip()]
+    no_comments = "\n".join(line.split("--", 1)[0] for line in text.splitlines())
+    return [s.strip() for s in no_comments.split(";") if s.strip()]
+
+
+# M1: a trending monthly series (intended_transform = yoy)
+M1 = list(range(100, 115))                       # 100..114, 15 values
+# L1: a mean-reverting monthly series (intended_transform = level)
+L1 = [5, 7, 4, 6, 5, 8, 3, 6, 5, 7, 4, 6, 5, 8, 3]
 
 
 def _fixture_con():
@@ -25,51 +32,59 @@ def _fixture_con():
     con.execute("""CREATE TABLE dim_fred_series
                    (series_id VARCHAR, name VARCHAR, region VARCHAR, category VARCHAR,
                     freq VARCHAR, "transform" VARCHAR, verify BOOLEAN)""")
-    # a 15-month monthly series: 100, 101, ... 114 on the 1st of each month
-    vals = list(range(100, 115))          # 15 values
-    for i, v in enumerate(vals):
-        year = 2020 + (i // 12)
-        month = (i % 12) + 1
-        con.execute("INSERT INTO stg_fred_observations VALUES (?, ?, ?, NULL)",
-                    ["M1", f"{year}-{month:02d}-01", float(v)])
-    con.execute("""INSERT INTO dim_fred_series
-                   VALUES ('M1','Test monthly','US','growth','M','yoy',FALSE)""")
-    return con, vals
+    for sid, vals in (("M1", M1), ("L1", L1)):
+        for i, v in enumerate(vals):
+            year = 2020 + (i // 12)
+            month = (i % 12) + 1
+            con.execute("INSERT INTO stg_fred_observations VALUES (?, ?, ?, NULL)",
+                        [sid, f"{year}-{month:02d}-01", float(v)])
+    con.execute("""INSERT INTO dim_fred_series VALUES
+                   ('M1','Trending','US','growth','M','yoy',FALSE),
+                   ('L1','Mean-reverting','US','growth','M','level',FALSE)""")
+    return con
 
 
-def test_analytics_columns_and_maths():
-    con, vals = _fixture_con()
+def test_analytics_maths_and_primary():
+    con = _fixture_con()
     for stmt in _statements(SQL):
         con.execute(stmt)
 
     # reconciliation: one analytics row per staging row
-    n = con.execute("SELECT count(*) FROM fct_series_analytics").fetchone()[0]
-    assert n == len(vals)
+    assert con.execute("SELECT count(*) FROM fct_series_analytics").fetchone()[0] == len(M1) + len(L1)
 
-    # period change is +1 everywhere after the first row
+    # M1 period change is +1 everywhere after the first row
     chgs = [r[0] for r in con.execute(
-        "SELECT chg FROM fct_series_analytics WHERE prev_value IS NOT NULL "
+        "SELECT chg FROM fct_series_analytics WHERE series_id='M1' AND prev_value IS NOT NULL "
         "ORDER BY obs_date").fetchall()]
     assert all(abs(c - 1.0) < 1e-9 for c in chgs)
 
-    # YoY at 2021-01-01 (value 112) vs 2020-01-01 (value 100) = 0.12
-    yoy = con.execute(
-        "SELECT chg_yoy FROM fct_series_analytics WHERE obs_date = '2021-01-01'"
-    ).fetchone()[0]
+    # M1 YoY at 2021-01-01 (112) vs 2020-01-01 (100) = 0.12; primary_value IS the YoY
+    yoy, prim = con.execute(
+        "SELECT chg_yoy, primary_value FROM fct_series_analytics "
+        "WHERE series_id='M1' AND obs_date='2021-01-01'").fetchone()
     assert abs(yoy - 0.12) < 1e-9
+    assert abs(prim - 0.12) < 1e-9
 
-    # metadata propagated
+    # M1 metadata propagated
     freq, itransform = con.execute(
-        "SELECT freq, intended_transform FROM fct_series_analytics LIMIT 1").fetchone()
+        "SELECT freq, intended_transform FROM fct_series_analytics WHERE series_id='M1' LIMIT 1").fetchone()
     assert freq == "M" and itransform == "yoy"
 
-    # expanding z-score at the final row matches a hand computation
-    z = con.execute(
-        "SELECT zscore FROM fct_series_analytics WHERE obs_date = '2021-03-01'"
-    ).fetchone()[0]
-    mean = statistics.mean(vals)
-    sd = statistics.stdev(vals)               # sample sd (ddof=1), matches STDDEV_SAMP
-    expected_z = (vals[-1] - mean) / sd
+    # M1 expanding level z-score at the final row matches a hand computation
+    z = con.execute("SELECT zscore FROM fct_series_analytics "
+                    "WHERE series_id='M1' AND obs_date='2021-03-01'").fetchone()[0]
+    expected_z = (M1[-1] - statistics.mean(M1)) / statistics.stdev(M1)
     assert abs(z - expected_z) < 1e-9
+
+    # L1 is a level series: primary_value == value and primary_zscore == zscore
+    rows = con.execute(
+        "SELECT value, primary_value, zscore, primary_zscore FROM fct_series_analytics "
+        "WHERE series_id='L1' ORDER BY obs_date").fetchall()
+    for value, primary_value, zscore, primary_zscore in rows:
+        assert abs(primary_value - value) < 1e-9
+        if zscore is None:
+            assert primary_zscore is None
+        else:
+            assert abs(primary_zscore - zscore) < 1e-9
 
     con.close()

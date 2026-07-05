@@ -1,13 +1,16 @@
 -- 01_series_analytics.sql
 -- Per-series enrichment for every FRED series in the warehouse.
--- Computes, for each (series, date):
+-- For each (series, date) it computes:
 --   * period change (chg) and period % change (chg_pct) vs the previous observation
---   * calendar-matched year-over-year change (chg_yoy) via an ASOF join to the
---     most recent observation on or before one year earlier (works for any freq)
---   * an EXPANDING, point-in-time z-score (value vs the series' own history TO DATE)
---   * a 21-observation rolling volatility of period returns (chiefly for daily series)
+--   * calendar-matched year-over-year change (chg_yoy) via an ASOF join to the most
+--     recent observation on or before one year earlier (correct for any frequency)
+--   * zscore        : EXPANDING point-in-time z-score of the raw level
+--   * primary_value : the analytically-correct representation, chosen by the series'
+--                     intended_transform  (level -> value, yoy -> chg_yoy, mom -> chg)
+--   * primary_zscore: EXPANDING point-in-time z-score of primary_value  <-- use this one
+--   * roll_vol_21   : 21-observation rolling volatility of period returns (daily series)
 -- All values use only data up to and including their own date (no look-ahead).
--- The table is dropped and rebuilt each run, so the transform is idempotent.
+-- Dropped and rebuilt each run (idempotent).
 
 DROP TABLE IF EXISTS fct_series_analytics;
 
@@ -58,6 +61,25 @@ yoy AS (
     ASOF LEFT JOIN rolled p
       ON p.series_id = r.series_id
      AND p.obs_date <= r.obs_date - INTERVAL 1 YEAR
+),
+prim AS (
+    SELECT
+        yoy.*,
+        CASE intended_transform
+             WHEN 'yoy' THEN chg_yoy
+             WHEN 'mom' THEN chg
+             ELSE value
+        END AS primary_value
+    FROM yoy
+),
+prim_z AS (
+    SELECT
+        prim.*,
+        AVG(primary_value)         OVER pw AS prim_mean,
+        STDDEV_SAMP(primary_value) OVER pw AS prim_sd
+    FROM prim
+    WINDOW pw AS (PARTITION BY series_id ORDER BY obs_date
+                  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
 )
 SELECT
     series_id,
@@ -71,8 +93,12 @@ SELECT
     CASE WHEN hist_sd IS NOT NULL AND hist_sd <> 0
          THEN (value - hist_mean) / hist_sd
     END AS zscore,
+    primary_value,
+    CASE WHEN prim_sd IS NOT NULL AND prim_sd <> 0
+         THEN (primary_value - prim_mean) / prim_sd
+    END AS primary_zscore,
     roll_vol_21,
     freq,
     intended_transform
-FROM yoy
+FROM prim_z
 ORDER BY series_id, obs_date;
