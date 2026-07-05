@@ -56,6 +56,30 @@ def build_report(rows: list[dict], run_date: str, duration_s: float,
     return "\n".join(out)
 
 
+def build_transform_report(table_counts: dict, regime_label, run_date: str,
+                           reconciled: bool) -> str:
+    """Markdown report for a transform run: tables built, reconciliation, regime."""
+    banner = "PASS" if reconciled else "COMPLETED WITH ISSUES"
+    out = []
+    out.append(f"# Transform Run — {run_date}")
+    out.append("")
+    out.append(f"**Result: {banner}**")
+    out.append("")
+    out.append(f"- Gold tables built: **{len(table_counts)}**")
+    out.append(f"- Reconciliation (analytics vs staging): "
+               f"**{'MATCH' if reconciled else 'MISMATCH'}**")
+    out.append(f"- Current regime: **{regime_label or 'n/a'}**")
+    out.append("")
+    out.append("## Tables")
+    out.append("")
+    out.append("| Table | Rows |")
+    out.append("|---|---|")
+    for t in sorted(table_counts):
+        out.append(f"| `{t}` | {table_counts[t]:,} |")
+    out.append("")
+    return "\n".join(out)
+
+
 def write_report(md: str, path: str) -> str:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
