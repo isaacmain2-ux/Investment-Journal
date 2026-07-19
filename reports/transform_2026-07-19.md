@@ -2,7 +2,7 @@
 
 **Result: PASS**
 
-- Gold tables built: **7**
+- Gold tables built: **8**
 - Reconciliation (analytics vs staging): **MATCH**
 - Current regime: **Growth Neutral · Inflation Above-trend · Conditions Loose**
 
@@ -16,4 +16,5 @@
 | `fct_equity_analytics` | 259,642 |
 | `fct_fx` | 5,392 |
 | `fct_regime` | 7,866 |
+| `fct_relative_strength` | 76,602 |
 | `fct_series_analytics` | 167,233 |
