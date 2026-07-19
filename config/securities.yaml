@@ -1,0 +1,104 @@
+# ==============================================================================
+# securities.yaml  -  Equities, ETFs & watchlist (yfinance)
+# Investment Journal - Phase 1b
+# ------------------------------------------------------------------------------
+# Scope: US + UK/Europe    Base currency: GBP    Source: yfinance
+# ------------------------------------------------------------------------------
+# Each entry:
+#   ticker    Yahoo Finance symbol (passed straight to yfinance)
+#   name      human-readable label
+#   type      index | etf | stock
+#   region    US | UK | EU | DE | FR | NL | GLOBAL
+#   currency  quote currency: USD | GBP | GBp (pence!) | EUR
+#   sector    optional GICS-style tag (etfs / stocks)
+#
+# NB on currency: yfinance returns each security's LISTING currency. UK shares
+# (.L) are quoted in PENCE (GBp) - a FX conversion plus a /100 pence fix is
+# applied in the transform layer, not here. Raw prices are stored untouched.
+# ==============================================================================
+
+meta:
+  base_currency: GBP
+  source: yfinance
+  history_start: "2010-01-01"
+  batch_size: 30
+
+securities:
+
+  indices:
+    - { ticker: "^GSPC",     name: "S&P 500",          type: index, region: US, currency: USD }
+    - { ticker: "^IXIC",     name: "Nasdaq Composite", type: index, region: US, currency: USD }
+    - { ticker: "^RUT",      name: "Russell 2000",     type: index, region: US, currency: USD }
+    - { ticker: "^FTSE",     name: "FTSE 100",         type: index, region: UK, currency: GBP }
+    - { ticker: "^STOXX50E", name: "Euro Stoxx 50",    type: index, region: EU, currency: EUR }
+    - { ticker: "^GDAXI",    name: "DAX",              type: index, region: DE, currency: EUR }
+
+  sector_etfs:
+    - { ticker: XLK,  name: "Technology",             type: etf, region: US, currency: USD, sector: Technology }
+    - { ticker: XLF,  name: "Financials",             type: etf, region: US, currency: USD, sector: Financials }
+    - { ticker: XLE,  name: "Energy",                 type: etf, region: US, currency: USD, sector: Energy }
+    - { ticker: XLV,  name: "Health Care",            type: etf, region: US, currency: USD, sector: "Health Care" }
+    - { ticker: XLI,  name: "Industrials",            type: etf, region: US, currency: USD, sector: Industrials }
+    - { ticker: XLY,  name: "Consumer Discretionary", type: etf, region: US, currency: USD, sector: "Consumer Discretionary" }
+    - { ticker: XLP,  name: "Consumer Staples",       type: etf, region: US, currency: USD, sector: "Consumer Staples" }
+    - { ticker: XLU,  name: "Utilities",              type: etf, region: US, currency: USD, sector: Utilities }
+    - { ticker: XLB,  name: "Materials",              type: etf, region: US, currency: USD, sector: Materials }
+    - { ticker: XLRE, name: "Real Estate",            type: etf, region: US, currency: USD, sector: "Real Estate" }
+    - { ticker: XLC,  name: "Communication Services", type: etf, region: US, currency: USD, sector: "Communication Services" }
+
+  country_etfs:
+    - { ticker: EWU, name: "UK equity",       type: etf, region: UK, currency: USD }
+    - { ticker: EWG, name: "Germany equity",  type: etf, region: DE, currency: USD }
+    - { ticker: EWQ, name: "France equity",   type: etf, region: FR, currency: USD }
+    - { ticker: EZU, name: "Eurozone equity", type: etf, region: EU, currency: USD }
+    - { ticker: VGK, name: "Europe equity",   type: etf, region: EU, currency: USD }
+
+  bond_etfs:
+    - { ticker: SHY, name: "1-3y Treasuries",  type: etf, region: US, currency: USD }
+    - { ticker: IEF, name: "7-10y Treasuries", type: etf, region: US, currency: USD }
+    - { ticker: TLT, name: "20y+ Treasuries",  type: etf, region: US, currency: USD }
+    - { ticker: LQD, name: "IG corporate",     type: etf, region: US, currency: USD }
+    - { ticker: HYG, name: "High yield",       type: etf, region: US, currency: USD }
+    - { ticker: EMB, name: "EM bonds",         type: etf, region: GLOBAL, currency: USD }
+
+  style_etfs:
+    - { ticker: MTUM, name: "Momentum", type: etf, region: US, currency: USD, sector: Factor }
+    - { ticker: VLUE, name: "Value",    type: etf, region: US, currency: USD, sector: Factor }
+    - { ticker: QUAL, name: "Quality",  type: etf, region: US, currency: USD, sector: Factor }
+    - { ticker: USMV, name: "Low vol",  type: etf, region: US, currency: USD, sector: Factor }
+
+  commodities:
+    - { ticker: GLD, name: "Gold",              type: etf, region: GLOBAL, currency: USD, sector: Commodity }
+    - { ticker: DBC, name: "Broad commodities", type: etf, region: GLOBAL, currency: USD, sector: Commodity }
+
+  watchlist:
+    - { ticker: AAPL,  name: "Apple",              type: stock, region: US, currency: USD, sector: Technology }
+    - { ticker: MSFT,  name: "Microsoft",          type: stock, region: US, currency: USD, sector: Technology }
+    - { ticker: NVDA,  name: "NVIDIA",             type: stock, region: US, currency: USD, sector: Technology }
+    - { ticker: GOOGL, name: "Alphabet",           type: stock, region: US, currency: USD, sector: "Communication Services" }
+    - { ticker: AMZN,  name: "Amazon",             type: stock, region: US, currency: USD, sector: "Consumer Discretionary" }
+    - { ticker: META,  name: "Meta Platforms",     type: stock, region: US, currency: USD, sector: "Communication Services" }
+    - { ticker: AMD,   name: "AMD",                type: stock, region: US, currency: USD, sector: Technology }
+    - { ticker: JPM,   name: "JPMorgan Chase",     type: stock, region: US, currency: USD, sector: Financials }
+    - { ticker: V,     name: "Visa",               type: stock, region: US, currency: USD, sector: Financials }
+    - { ticker: HSBA.L, name: "HSBC",              type: stock, region: UK, currency: GBp, sector: Financials }
+    - { ticker: UNH,   name: "UnitedHealth",       type: stock, region: US, currency: USD, sector: "Health Care" }
+    - { ticker: LLY,   name: "Eli Lilly",          type: stock, region: US, currency: USD, sector: "Health Care" }
+    - { ticker: NVO,   name: "Novo Nordisk (ADR)", type: stock, region: US, currency: USD, sector: "Health Care" }
+    - { ticker: AZN.L, name: "AstraZeneca",        type: stock, region: UK, currency: GBp, sector: "Health Care" }
+    - { ticker: GSK.L, name: "GSK",                type: stock, region: UK, currency: GBp, sector: "Health Care" }
+    - { ticker: XOM,   name: "ExxonMobil",         type: stock, region: US, currency: USD, sector: Energy }
+    - { ticker: SHEL.L, name: "Shell",             type: stock, region: UK, currency: GBp, sector: Energy }
+    - { ticker: BP.L,  name: "BP",                 type: stock, region: UK, currency: GBp, sector: Energy }
+    - { ticker: TTE.PA, name: "TotalEnergies",     type: stock, region: FR, currency: EUR, sector: Energy }
+    - { ticker: RIO.L, name: "Rio Tinto",          type: stock, region: UK, currency: GBp, sector: Materials }
+    - { ticker: SIE.DE, name: "Siemens",           type: stock, region: DE, currency: EUR, sector: Industrials }
+    - { ticker: CAT,   name: "Caterpillar",        type: stock, region: US, currency: USD, sector: Industrials }
+    - { ticker: AIR.PA, name: "Airbus",            type: stock, region: FR, currency: EUR, sector: Industrials }
+    - { ticker: COST,  name: "Costco",             type: stock, region: US, currency: USD, sector: "Consumer Staples" }
+    - { ticker: ULVR.L, name: "Unilever",          type: stock, region: UK, currency: GBp, sector: "Consumer Staples" }
+    - { ticker: DGE.L, name: "Diageo",             type: stock, region: UK, currency: GBp, sector: "Consumer Staples" }
+    - { ticker: MC.PA, name: "LVMH",               type: stock, region: FR, currency: EUR, sector: "Consumer Discretionary" }
+    - { ticker: OR.PA, name: "L'Oreal",            type: stock, region: FR, currency: EUR, sector: "Consumer Staples" }
+    - { ticker: ASML.AS, name: "ASML",             type: stock, region: NL, currency: EUR, sector: Technology }
+    - { ticker: SAP.DE, name: "SAP",               type: stock, region: DE, currency: EUR, sector: Technology }
