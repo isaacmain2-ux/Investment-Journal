@@ -15,6 +15,7 @@ from pathlib import Path
 
 from src.common import reporting
 from src.load import load_fred          # reuse the warehouse connection
+from src.load import load_headlines     # ensure headline tables exist for 09_headlines
 from src.transform import derive
 
 SQL_DIR = Path("src/transform/sql")
@@ -36,6 +37,11 @@ def run(sql_dir: Path = SQL_DIR) -> int:
 
     con = load_fred.get_connection()
     t0 = time.time()
+
+    # Ensure the headline tables exist so 09_headlines.sql builds even on a
+    # warehouse where FT has never been ingested (it just yields an empty table).
+    load_headlines.ensure_schema(con)
+    load_headlines.ensure_feed_dim_schema(con)
 
     for f in files:
         print(f"Running {f.name} ...")

@@ -1,0 +1,15 @@
+# ==============================================================================
+# skew_tickers.yaml  -  options-skew underlyings (Addition #3)
+# Source: Yahoo Finance option chains (unofficial, snapshot-only -> accumulates).
+#   target_dte : preferred days-to-expiry for the sampled chain (nearest is used)
+#   moneyness  : strike/spot levels at which IV is interpolated
+# Each ticker: id (warehouse key), ticker (Yahoo symbol), label.
+# ==============================================================================
+meta:
+  target_dte: 30
+  moneyness: { put: 0.90, atm: 1.00, call: 1.10 }
+
+tickers:
+  - { id: spx, ticker: "SPY", label: "S&P 500 (SPY)" }
+  - { id: ndx, ticker: "QQQ", label: "Nasdaq 100 (QQQ)" }
+  - { id: rut, ticker: "IWM", label: "Russell 2000 (IWM)" }

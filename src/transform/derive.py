@@ -14,7 +14,10 @@ A positive axis means "above its own historical norm". Everything is
 forward-filled only (past data), so there is no look-ahead.
 
 The snapshot then folds in the EQUITY picture (index moves, sector leadership,
-the top factor-screen names) so one row carries both the macro and market view.
+the top factor-screen names) so one row carries both the macro and market view,
+and - when FT news has been ingested - a light HEADLINE block (how many stories
+that day plus the most recent titles) for the Phase 3 overlay to read. Both the
+equity and headline blocks are optional: the snapshot builds without them.
 """
 from __future__ import annotations
 
@@ -40,6 +43,9 @@ NEUTRAL_BAND = 0.25
 # how many names/sectors to list in the snapshot's summary strings
 TOP_N = 3
 
+# how many recent headline titles to surface per day in the snapshot
+TOP_HEADLINES = 5
+
 
 def _state(x, pos_label, neg_label, mid_label="Neutral"):
     if pd.isna(x):
@@ -51,9 +57,11 @@ def _state(x, pos_label, neg_label, mid_label="Neutral"):
     return mid_label
 
 
-def compute(analytics_df: pd.DataFrame):
+def compute(analytics_df: pd.DataFrame, vol_term_df: pd.DataFrame | None = None):
     """Given the fct_series_analytics rows (long), return (regime_df, snapshot_df),
-    each one row per date. Macro only - equity fields are merged in by `run`."""
+    each one row per date. Macro only - equity fields are merged in by `run`.
+    If vol_term_df is supplied, a volatility dimension from the term structure
+    (contango/backwardation) is appended to the regime label."""
     zwide = (analytics_df.pivot_table(index="obs_date", columns="series_id",
                                       values="primary_zscore", aggfunc="last")
              .sort_index())
@@ -82,11 +90,23 @@ def compute(analytics_df: pd.DataFrame):
     regime["conditions_state"] = regime["conditions"].map(
         lambda x: _state(x, "Tight", "Loose"))
 
+    # optional volatility dimension from the term structure (contango/backwardation)
+    regime["vol_state"] = None
+    if vol_term_df is not None and len(vol_term_df):
+        smap = {"contango": "Calm", "flat": "Neutral", "backwardation": "Stressed"}
+        vt = vol_term_df.copy()
+        vt["_d"] = pd.to_datetime(vt["date"]).dt.normalize()
+        vt_state = dict(zip(vt["_d"], vt["ts_state"].map(smap)))
+        regime["vol_state"] = pd.to_datetime(regime["date"]).dt.normalize().map(vt_state)
+
     def _label(r):
         if None in (r["growth_state"], r["inflation_state"], r["conditions_state"]):
             return None
-        return (f"Growth {r['growth_state']} \u00b7 Inflation {r['inflation_state']} "
+        base = (f"Growth {r['growth_state']} \u00b7 Inflation {r['inflation_state']} "
                 f"\u00b7 Conditions {r['conditions_state']}")
+        if pd.notna(r.get("vol_state")):
+            base += f" \u00b7 Vol {r['vol_state']}"
+        return base
     regime["regime_label"] = regime.apply(_label, axis=1)
 
     snap = pd.DataFrame({"date": vwide.index})
@@ -158,6 +178,139 @@ def equity_summary(eq_df: pd.DataFrame, rs_df: pd.DataFrame,
     return out
 
 
+def headline_summary(hl_df: pd.DataFrame, top_n: int = TOP_HEADLINES) -> pd.DataFrame:
+    """Build one row per date from fct_headlines: how many FT stories were
+    published that day and the most recent titles. Pure and tolerant - returns an
+    empty frame for None/empty input, and ignores stories with no published_date
+    (they can't be placed on a calendar day)."""
+    cols = ["date", "n_headlines", "top_headlines"]
+    if hl_df is None or len(hl_df) == 0:
+        return pd.DataFrame(columns=cols)
+
+    df = hl_df.copy()
+    df = df[df["published_date"].notna()]
+    if len(df) == 0:
+        return pd.DataFrame(columns=cols)
+    df["date"] = pd.to_datetime(df["published_date"]).dt.date
+
+    # most-recent-first within a day, so the top_n titles are the freshest
+    if "published_at" in df.columns:
+        df = df.sort_values("published_at", ascending=False, na_position="last")
+
+    rows = []
+    for date, g in df.groupby("date"):
+        titles = [t for t in g["title"].tolist() if isinstance(t, str) and t.strip()]
+        rows.append({"date": date,
+                     "n_headlines": int(len(g)),
+                     "top_headlines": " | ".join(titles[:top_n]) or None})
+    return pd.DataFrame(rows).sort_values("date").reset_index(drop=True)
+
+
+def vol_summary(vol_df: pd.DataFrame) -> pd.DataFrame:
+    """One row per date of the volatility term-structure block: the VIX
+    contango/backwardation ratio and its banded state. Pure and tolerant of
+    None/empty - returns an empty frame when fct_vol_term is absent."""
+    cols = ["date", "vix_ts_ratio", "ts_state"]
+    if vol_df is None or len(vol_df) == 0 or "date" not in vol_df.columns:
+        return pd.DataFrame(columns=cols)
+    df = vol_df.copy()
+    for c in ("vix_ts_ratio", "ts_state"):
+        if c not in df.columns:
+            df[c] = None
+    df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.date
+    return df[cols].dropna(subset=["date"]).reset_index(drop=True)
+
+
+POSITIONING_MARKETS = ("vix", "sp500")
+
+
+def positioning_summary(pos_df: pd.DataFrame) -> pd.DataFrame:
+    """Point-in-time positioning block keyed by available_from: the latest
+    Leveraged Funds net percentile for the key markets, ready for an as-of merge
+    onto the daily snapshot. Pure; tolerant of None/empty."""
+    cols = ["available_from", "vix_lev_pctile", "sp500_lev_pctile", "positioning_note"]
+    if pos_df is None or len(pos_df) == 0 or "available_from" not in pos_df.columns:
+        return pd.DataFrame(columns=cols)
+    df = pos_df.copy()
+    df["available_from"] = pd.to_datetime(df["available_from"], errors="coerce")
+    df = df.dropna(subset=["available_from"])
+    keep = df[df["market_id"].isin(POSITIONING_MARKETS)]
+    if not len(keep):
+        return pd.DataFrame(columns=cols)
+    wide = (keep.sort_values("available_from")
+                .pivot_table(index="available_from", columns="market_id",
+                             values="net_lev_pctile", aggfunc="last"))
+    out = pd.DataFrame({"available_from": wide.index})
+    out["vix_lev_pctile"] = wide["vix"].values if "vix" in wide.columns else None
+    out["sp500_lev_pctile"] = wide["sp500"].values if "sp500" in wide.columns else None
+
+    def _note(r):
+        bits = []
+        if pd.notna(r["vix_lev_pctile"]):
+            bits.append(f"VIX lev {r['vix_lev_pctile'] * 100:.0f}%ile")
+        if pd.notna(r["sp500_lev_pctile"]):
+            bits.append(f"S&P lev {r['sp500_lev_pctile'] * 100:.0f}%ile")
+        return " | ".join(bits)
+
+    out["positioning_note"] = out.apply(_note, axis=1)
+    return out[cols].reset_index(drop=True)
+
+
+def _fold_positioning(snap: pd.DataFrame, pos_sum: pd.DataFrame) -> pd.DataFrame:
+    """Point-in-time as-of merge of the positioning block onto the daily snapshot.
+    Both date keys are forced to the same datetime resolution first - merge_asof
+    requires identical units, and the two columns can arrive as datetime64[s] vs
+    [us] depending on how each was built."""
+    snap = snap.sort_values("date").reset_index(drop=True)
+    snap["_d"] = pd.to_datetime(snap["date"]).astype("datetime64[ns]")
+    pos_sum = pos_sum.sort_values("available_from").copy()
+    pos_sum["available_from"] = pd.to_datetime(pos_sum["available_from"]).astype("datetime64[ns]")
+    merged = pd.merge_asof(snap, pos_sum, left_on="_d", right_on="available_from",
+                           direction="backward")
+    return merged.drop(columns=["_d", "available_from"])
+
+
+SKEW_TICKER = "spx"
+
+
+def skew_summary(skew_df: pd.DataFrame) -> pd.DataFrame:
+    """Point-in-time skew block keyed by capture_date: the key ticker's latest
+    put_skew and its percentile, ready for an as-of merge onto the daily snapshot.
+    Pure; tolerant of None/empty."""
+    cols = ["capture_date", "put_skew", "put_skew_pctile", "skew_note"]
+    if skew_df is None or len(skew_df) == 0 or "capture_date" not in skew_df.columns:
+        return pd.DataFrame(columns=cols)
+    df = skew_df[skew_df["ticker_id"] == SKEW_TICKER].copy()
+    if not len(df):
+        return pd.DataFrame(columns=cols)
+    df["capture_date"] = pd.to_datetime(df["capture_date"], errors="coerce")
+    df = df.dropna(subset=["capture_date"]).sort_values("capture_date")
+    out = df[["capture_date", "put_skew", "put_skew_pctile"]].copy()
+
+    def _note(r):
+        if pd.isna(r["put_skew"]):
+            return ""
+        s = f"SPY put-skew {r['put_skew']:+.3f}"
+        if pd.notna(r["put_skew_pctile"]):
+            s += f" ({r['put_skew_pctile'] * 100:.0f}%ile)"
+        return s
+
+    out["skew_note"] = out.apply(_note, axis=1)
+    return out[cols].reset_index(drop=True)
+
+
+def _fold_skew(snap: pd.DataFrame, skew_sum: pd.DataFrame) -> pd.DataFrame:
+    """Point-in-time as-of merge of the skew block onto the daily snapshot (latest
+    capture on or before each date). Datetime resolution normalised as above."""
+    snap = snap.sort_values("date").reset_index(drop=True)
+    snap["_d"] = pd.to_datetime(snap["date"]).astype("datetime64[ns]")
+    skew_sum = skew_sum.sort_values("capture_date").copy()
+    skew_sum["capture_date"] = pd.to_datetime(skew_sum["capture_date"]).astype("datetime64[ns]")
+    merged = pd.merge_asof(snap, skew_sum, left_on="_d", right_on="capture_date",
+                           direction="backward")
+    return merged.drop(columns=["_d", "capture_date"])
+
+
 def _read(con, sql):
     """Query helper that tolerates a table not existing yet (returns None)."""
     try:
@@ -171,7 +324,10 @@ def run(con) -> tuple[int, int]:
     analytics = con.execute(
         "SELECT series_id, obs_date, value, primary_value, primary_zscore "
         "FROM fct_series_analytics").df()
-    regime, snap = compute(analytics)
+    # read the vol term structure up front so it can feed BOTH the regime label
+    # and the snapshot's volatility block
+    vt = _read(con, "SELECT date, vix_ts_ratio, ts_state FROM fct_vol_term")
+    regime, snap = compute(analytics, vol_term_df=vt)
 
     eq = _read(con, "SELECT ticker, price_date, adj_close, ret_1d FROM fct_equity_analytics")
     rs = _read(con, 'SELECT ticker, price_date, "group", excess_63d FROM fct_relative_strength')
@@ -180,6 +336,33 @@ def run(con) -> tuple[int, int]:
         eq_sum = equity_summary(eq, rs, fs)
         if len(eq_sum):
             snap = snap.merge(eq_sum, on="date", how="left")
+
+    # optional FT headline block - only if news has been ingested
+    hl = _read(con, "SELECT published_date, published_at, title, section FROM fct_headlines")
+    if hl is not None:
+        hl_sum = headline_summary(hl)
+        if len(hl_sum):
+            snap = snap.merge(hl_sum, on="date", how="left")
+
+    # optional volatility term-structure block - only if fct_vol_term is built
+    if vt is not None:
+        vt_sum = vol_summary(vt)
+        if len(vt_sum):
+            snap = snap.merge(vt_sum, on="date", how="left")
+
+    # optional positioning block - point-in-time as-of merge on available_from
+    pos = _read(con, "SELECT market_id, available_from, net_lev_pctile FROM fct_positioning")
+    if pos is not None:
+        pos_sum = positioning_summary(pos)
+        if len(pos_sum):
+            snap = _fold_positioning(snap, pos_sum)
+
+    # optional options-skew block - point-in-time as-of merge on capture_date
+    sk = _read(con, "SELECT ticker_id, capture_date, put_skew, put_skew_pctile FROM fct_skew")
+    if sk is not None:
+        sk_sum = skew_summary(sk)
+        if len(sk_sum):
+            snap = _fold_skew(snap, sk_sum)
 
     con.register("regime_df", regime)
     con.execute("DROP TABLE IF EXISTS fct_regime")

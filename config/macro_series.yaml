@@ -1,161 +1,139 @@
 # ==============================================================================
-# macro_series.yaml  —  FRED-led macro, rates & credit
-# Investment Journal · Phase 1a
+# macro_series.yaml  -  FRED macro / rates / credit / vol universe
+# Investment Journal - Phases 1a / 1a-T (+ vol term-structure addition)
 # ------------------------------------------------------------------------------
-# Scope:  US + UK / Europe        Base currency:  GBP        Source:  FRED
+# Scope: US + UK/Europe macro    Source: FRED    History from 2005-01-01
 # ------------------------------------------------------------------------------
 # Each entry:
-#   id         FRED series_id — passed straight into the FRED API call
-#   name       human-readable label stored in the warehouse
-#   region     US | UK | EZ | DE | GLOBAL
-#   freq       native frequency:  D=daily  W=weekly  M=monthly  Q=quarterly
-#   transform  how the analytical value is derived: level | yoy | mom
-#   verify     present & true  ->  double-check this id on fred.stlouisfed.org
-#              before the first run (FRED's non-US / OECD codes are fiddly).
+#   id         FRED series id (passed straight to the API)
+#   name       human-readable label
+#   region     US | UK | EU | DE | GLOBAL
+#   freq       D | W | M | Q   (native frequency)
+#   transform  level | yoy | mom   -> drives primary_value / primary_zscore
+#                level : mean-reverting series (rates, spreads, vol, sentiment)
+#                yoy   : trending index series (CPI, GDP, output, money)
+#                mom   : flow series (payrolls)
+#   verify     (optional) true = used by the pre-flight connectivity check
 #
-# IDs with NO `verify` flag are confirmed. The extractor should skip-and-log any
-# id that returns 404 rather than crash the whole run (see notes at the bottom).
+# Series marked "# added" are the vol term-structure / inflation-forward additions.
 # ==============================================================================
 
 meta:
-  base_currency: GBP
-  regions: [US, UK, EZ]
   source: FRED
-  history_start: "2005-01-01"    # backfill depth — deeper = stronger z-scores, slower first load
-  rate_limit_per_min: 110        # FRED allows ~120/min; stay just under
-
+  history_start: "2005-01-01"
+  base_currency: "GBP"
+  
 series:
 
-  # ----------------------------------------------------------------------------
-  # GROWTH & ACTIVITY
-  # ----------------------------------------------------------------------------
+  # ---------------------------------------------------------------- growth
   growth:
-    - { id: GDPC1,   name: "US real GDP",               region: US, freq: Q, transform: yoy }
-    - { id: INDPRO,  name: "US industrial production",  region: US, freq: M, transform: yoy }
-    - { id: RSAFS,   name: "US retail sales",           region: US, freq: M, transform: yoy }
-    - { id: PAYEMS,  name: "US nonfarm payrolls",       region: US, freq: M, transform: mom }
-    - { id: ICSA,    name: "US initial jobless claims", region: US, freq: W, transform: level }
-    - { id: UNRATE,  name: "US unemployment rate",      region: US, freq: M, transform: level }
-    - { id: UMCSENT, name: "US consumer sentiment",     region: US, freq: M, transform: level }
-    - { id: HOUST,   name: "US housing starts",         region: US, freq: M, transform: yoy }
+    - { id: GDPC1,   name: "Real GDP",                     region: US, freq: Q, transform: yoy }
+    - { id: INDPRO,  name: "Industrial Production",        region: US, freq: M, transform: yoy }
+    - { id: RSAFS,   name: "Retail Sales",                 region: US, freq: M, transform: yoy }
+    - { id: PAYEMS,  name: "Nonfarm Payrolls",             region: US, freq: M, transform: mom }
+    - { id: ICSA,    name: "Initial Jobless Claims",       region: US, freq: W, transform: level }
+    - { id: UNRATE,  name: "Unemployment Rate",            region: US, freq: M, transform: level }
+    - { id: UMCSENT, name: "U. Michigan Consumer Sentiment", region: US, freq: M, transform: level }
+    - { id: HOUST,   name: "Housing Starts",               region: US, freq: M, transform: yoy }
 
-  # ----------------------------------------------------------------------------
-  # INFLATION
-  # ----------------------------------------------------------------------------
+  # ---------------------------------------------------------------- inflation
   inflation:
-    - { id: CPIAUCSL, name: "US CPI all items",         region: US, freq: M, transform: yoy }
-    - { id: CPILFESL, name: "US core CPI",              region: US, freq: M, transform: yoy }
-    - { id: PCEPILFE, name: "US core PCE",              region: US, freq: M, transform: yoy }
-    - { id: T10YIE,   name: "US 10y breakeven inflation", region: US, freq: D, transform: level }
-    - { id: T5YIFR,   name: "US 5y5y forward inflation", region: US, freq: D, transform: level }
+    - { id: CPIAUCSL, name: "CPI (headline)",              region: US, freq: M, transform: yoy }
+    - { id: CPILFESL, name: "Core CPI",                    region: US, freq: M, transform: yoy }
+    - { id: PCEPILFE, name: "Core PCE",                    region: US, freq: M, transform: yoy }
 
-  # ----------------------------------------------------------------------------
-  # POLICY RATES
-  # ----------------------------------------------------------------------------
+  # -------------------------------------------------- inflation expectations
+  inflation_expectations:
+    - { id: T5YIE,   name: "5-year breakeven inflation",           region: US, freq: D, transform: level }   # added
+    - { id: T10YIE,  name: "10-year breakeven inflation",          region: US, freq: D, transform: level }
+    - { id: T5YIFR,  name: "5y5y forward inflation expectation",   region: US, freq: D, transform: level }
+
+  # ---------------------------------------------------------------- policy rates
   policy_rates:
-    - { id: DFF,     name: "US fed funds (effective)",  region: US, freq: D, transform: level }
-    - { id: ECBDFR,  name: "ECB deposit facility rate", region: EZ, freq: D, transform: level }
-    - { id: IUDSOIA, name: "UK SONIA (BoE policy proxy)", region: UK, freq: D, transform: level, verify: true }
+    - { id: DFF,     name: "Fed Funds Effective Rate",     region: US, freq: D, transform: level }
+    - { id: ECBDFR,  name: "ECB Deposit Facility Rate",    region: EU, freq: D, transform: level }
+    - { id: IUDSOIA, name: "UK SONIA",                     region: UK, freq: D, transform: level }
 
-  # ----------------------------------------------------------------------------
-  # US TREASURY CURVE  (daily, constant maturity)
-  # ----------------------------------------------------------------------------
-  us_treasury_curve:
-    - { id: DGS1MO, name: "US 1-month",  region: US, freq: D, transform: level }
-    - { id: DGS3MO, name: "US 3-month",  region: US, freq: D, transform: level }
-    - { id: DGS6MO, name: "US 6-month",  region: US, freq: D, transform: level }
-    - { id: DGS1,   name: "US 1-year",   region: US, freq: D, transform: level }
-    - { id: DGS2,   name: "US 2-year",   region: US, freq: D, transform: level }
-    - { id: DGS3,   name: "US 3-year",   region: US, freq: D, transform: level }
-    - { id: DGS5,   name: "US 5-year",   region: US, freq: D, transform: level }
-    - { id: DGS7,   name: "US 7-year",   region: US, freq: D, transform: level }
-    - { id: DGS10,  name: "US 10-year",  region: US, freq: D, transform: level }
-    - { id: DGS20,  name: "US 20-year",  region: US, freq: D, transform: level }
-    - { id: DGS30,  name: "US 30-year",  region: US, freq: D, transform: level }
-    - { id: T10Y2Y, name: "US 2s10s slope",  region: US, freq: D, transform: level }
-    - { id: T10Y3M, name: "US 3m10y slope (recession signal)", region: US, freq: D, transform: level }
-    - { id: DFII5,  name: "US 5y real yield (TIPS)",  region: US, freq: D, transform: level }
-    - { id: DFII10, name: "US 10y real yield (TIPS)", region: US, freq: D, transform: level }
-    - { id: THREEFYTP10, name: "US 10y term premium (Kim-Wright)", region: US, freq: D, transform: level }
+  # ---------------------------------------------------------- treasury curve
+  treasury_curve:
+    - { id: DGS1MO,  name: "US 1-month Treasury yield",    region: US, freq: D, transform: level }
+    - { id: DGS3MO,  name: "US 3-month Treasury yield",    region: US, freq: D, transform: level }
+    - { id: DGS6MO,  name: "US 6-month Treasury yield",    region: US, freq: D, transform: level }
+    - { id: DGS1,    name: "US 1-year Treasury yield",     region: US, freq: D, transform: level }
+    - { id: DGS2,    name: "US 2-year Treasury yield",     region: US, freq: D, transform: level }
+    - { id: DGS3,    name: "US 3-year Treasury yield",     region: US, freq: D, transform: level }
+    - { id: DGS5,    name: "US 5-year Treasury yield",     region: US, freq: D, transform: level }
+    - { id: DGS7,    name: "US 7-year Treasury yield",     region: US, freq: D, transform: level }
+    - { id: DGS10,   name: "US 10-year Treasury yield",    region: US, freq: D, transform: level, verify: true }
+    - { id: DGS20,   name: "US 20-year Treasury yield",    region: US, freq: D, transform: level }
+    - { id: DGS30,   name: "US 30-year Treasury yield",    region: US, freq: D, transform: level }
 
-  # ----------------------------------------------------------------------------
-  # INTERNATIONAL SOVEREIGN YIELDS  (OECD via FRED — MONTHLY only)
-  #   NB: non-US sovereign yields on FRED are monthly. For daily UK/EZ tracking,
-  #   use gilt/bund ETFs in Phase 1b. Accept monthly here for the macro picture.
-  # ----------------------------------------------------------------------------
-  intl_yields:
-    - { id: IRLTLT01GBM156N, name: "UK 10y gilt yield",   region: UK, freq: M, transform: level }
-    - { id: IRLTLT01EZM156N, name: "Euro area 10y yield", region: EZ, freq: M, transform: level }
-    - { id: IRLTLT01DEM156N, name: "Germany 10y bund yield", region: DE, freq: M, transform: level, verify: true }
+  # ---------------------------------------------------------- curve spreads
+  curve_spreads:
+    - { id: T10Y2Y,  name: "10y minus 2y (2s10s slope)",   region: US, freq: D, transform: level }
+    - { id: T10Y3M,  name: "10y minus 3m (3m10y slope)",   region: US, freq: D, transform: level }
 
-  # ----------------------------------------------------------------------------
-  # CREDIT SPREADS  (ICE BofA OAS via FRED — daily, free)
-  #   NB: FRED now keeps a rolling ~3-year window of these. Pull daily from the
-  #   start to accumulate your own long history.
-  # ----------------------------------------------------------------------------
-  credit_spreads:
-    - { id: BAMLC0A0CM,    name: "US IG corporate OAS",   region: US, freq: D, transform: level }
-    - { id: BAMLH0A0HYM2,  name: "US HY corporate OAS",   region: US, freq: D, transform: level }
-    - { id: BAMLC0A1CAAA,  name: "US AAA OAS",            region: US, freq: D, transform: level }
-    - { id: BAMLC0A2CAA,   name: "US AA OAS",             region: US, freq: D, transform: level, verify: true }
-    - { id: BAMLC0A3CA,    name: "US A OAS",              region: US, freq: D, transform: level }
-    - { id: BAMLC0A4CBBB,  name: "US BBB OAS",            region: US, freq: D, transform: level }
-    - { id: BAMLH0A1HYBB,  name: "US BB OAS",             region: US, freq: D, transform: level }
-    - { id: BAMLH0A2HYB,   name: "US B OAS",              region: US, freq: D, transform: level }
-    - { id: BAMLH0A3HYC,   name: "US CCC & lower OAS",    region: US, freq: D, transform: level }
-    - { id: BAMLEMCBPIOAS, name: "EM corporate OAS",      region: GLOBAL, freq: D, transform: level, verify: true }
+  # -------------------------------------------------- real yields & premium
+  real_yields:
+    - { id: DFII5,       name: "US 5-year TIPS real yield",   region: US, freq: D, transform: level }
+    - { id: DFII10,      name: "US 10-year TIPS real yield",  region: US, freq: D, transform: level }
+    - { id: THREEFYTP10, name: "10-year term premium (KW)",   region: US, freq: D, transform: level }
 
-  # ----------------------------------------------------------------------------
-  # FINANCIAL CONDITIONS & LIQUIDITY
-  # ----------------------------------------------------------------------------
-  conditions_liquidity:
-    - { id: NFCI,    name: "Chicago Fed financial conditions", region: US, freq: W, transform: level }
-    - { id: STLFSI4, name: "St. Louis Fed financial stress",   region: US, freq: W, transform: level, verify: true }
-    - { id: M2SL,    name: "US M2 money supply",               region: US, freq: M, transform: yoy }
-    - { id: WALCL,   name: "Fed balance sheet (total assets)", region: US, freq: W, transform: level }
+  # -------------------------------------------------- international rates
+  intl_rates:
+    - { id: IRLTLT01GBM156N, name: "UK 10-year govt yield",      region: UK, freq: M, transform: level }
+    - { id: IRLTLT01EZM156N, name: "Euro area 10-year govt yield", region: EU, freq: M, transform: level }
+    - { id: IRLTLT01DEM156N, name: "Germany 10-year govt yield", region: DE, freq: M, transform: level }
 
-  # ----------------------------------------------------------------------------
-  # RISK & CROSS-ASSET
-  # ----------------------------------------------------------------------------
-  risk_crossasset:
-    - { id: VIXCLS,       name: "VIX",            region: US, freq: D, transform: level }
-    - { id: DTWEXBGS,     name: "Broad USD index", region: GLOBAL, freq: D, transform: level }
-    - { id: DCOILWTICO,   name: "WTI crude oil",   region: GLOBAL, freq: D, transform: level }
-    - { id: DCOILBRENTEU, name: "Brent crude oil", region: GLOBAL, freq: D, transform: level }
+  # ---------------------------------------------------------------- credit
+  credit:
+    - { id: BAMLC0A0CM,    name: "IG corporate OAS",        region: US, freq: D, transform: level }
+    - { id: BAMLH0A0HYM2,  name: "HY corporate OAS",        region: US, freq: D, transform: level }
+    - { id: BAMLC0A1CAAA,  name: "AAA corporate OAS",       region: US, freq: D, transform: level }
+    - { id: BAMLC0A2CAA,   name: "AA corporate OAS",        region: US, freq: D, transform: level }
+    - { id: BAMLC0A3CA,    name: "A corporate OAS",         region: US, freq: D, transform: level }
+    - { id: BAMLC0A4CBBB,  name: "BBB corporate OAS",       region: US, freq: D, transform: level }
+    - { id: BAMLH0A1HYBB,  name: "BB corporate OAS",        region: US, freq: D, transform: level }
+    - { id: BAMLH0A2HYB,   name: "B corporate OAS",         region: US, freq: D, transform: level }
+    - { id: BAMLH0A3HYC,   name: "CCC corporate OAS",       region: US, freq: D, transform: level }
+    - { id: BAMLEMCBPIOAS, name: "EM corporate OAS",        region: GLOBAL, freq: D, transform: level }
 
-  # ----------------------------------------------------------------------------
-  # FX  (for GBP base: pull USD pairs, derive cross-rates in the transform layer)
-  #   GBP per USD = 1 / DEXUSUK ;  EUR/GBP = DEXUSUK / DEXUSEU
-  # ----------------------------------------------------------------------------
+  # ------------------------------------------------- financial conditions
+  conditions:
+    - { id: NFCI,    name: "Chicago Fed National Financial Conditions Index", region: US, freq: W, transform: level }
+    - { id: STLFSI4, name: "St. Louis Fed Financial Stress Index",            region: US, freq: W, transform: level }
+
+  # ------------------------------------------------------- money & liquidity
+  money_liquidity:
+    - { id: M2SL,  name: "M2 Money Supply",                region: US, freq: M, transform: yoy }
+    - { id: WALCL, name: "Fed Total Assets (balance sheet)", region: US, freq: W, transform: yoy }
+
+  # ---------------------------------------------------------------- volatility
+  volatility:
+    - { id: VIXCLS,   name: "VIX (30-day)",                region: US, freq: D, transform: level }
+    - { id: VXVCLS,   name: "VIX 3-month (VIX3M)",         region: US, freq: D, transform: level }   # added
+    - { id: OVXCLS,   name: "Crude oil ETF vol (OVX)",     region: US, freq: D, transform: level }   # added
+    - { id: GVZCLS,   name: "Gold ETF vol (GVZ)",          region: US, freq: D, transform: level }   # added
+    - { id: VXEEMCLS, name: "Emerging-markets ETF vol",    region: US, freq: D, transform: level }   # added
+    - { id: EVZCLS,   name: "Euro FX vol (EVZ)",           region: US, freq: D, transform: level }   # added (verify id)
+    - { id: VXNCLS,   name: "Nasdaq-100 vol (VXN)",        region: US, freq: D, transform: level }   # added (verify id)
+    - { id: RVXCLS,   name: "Russell 2000 vol (RVX)",      region: US, freq: D, transform: level }   # added (verify id)
+
+  # ------------------------------------------------------------------- fx
   fx:
-    - { id: DEXUSUK, name: "USD per GBP", region: UK, freq: D, transform: level }
-    - { id: DEXUSEU, name: "USD per EUR", region: EZ, freq: D, transform: level }
+    - { id: DTWEXBGS, name: "Broad US Dollar Index",       region: US,     freq: D, transform: level }
+    - { id: DEXUSUK,  name: "USD per GBP",                 region: GLOBAL, freq: D, transform: level }
+    - { id: DEXUSEU,  name: "USD per EUR",                 region: GLOBAL, freq: D, transform: level }
 
-  # ----------------------------------------------------------------------------
-  # INTERNATIONAL MACRO  (UK & Euro area — OECD/Eurostat via FRED, monthly)
-  #   Several IDs flagged verify — confirm on fred.stlouisfed.org before first run.
-  # ----------------------------------------------------------------------------
-  intl_macro:
-    - { id: CP0000EZ19M086NEST, name: "Euro area HICP (index)",   region: EZ, freq: M, transform: yoy }
-    - { id: LRHUTTTTEZM156S,    name: "Euro area unemployment",   region: EZ, freq: M, transform: level, verify: true }
-    - { id: GBRCPIALLMINMEI,    name: "UK CPI all items (index)", region: UK, freq: M, transform: yoy, verify: true }
-    - { id: LRHUTTTTGBM156S,    name: "UK unemployment rate",     region: UK, freq: M, transform: level, verify: true }
-    - { id: NGDPRSAXDCGBQ,      name: "UK real GDP",              region: UK, freq: Q, transform: yoy, verify: true }
+  # ------------------------------------------------------------ commodities
+  commodities:
+    - { id: DCOILWTICO,   name: "WTI crude oil",           region: GLOBAL, freq: D, transform: level }
+    - { id: DCOILBRENTEU, name: "Brent crude oil",         region: GLOBAL, freq: D, transform: level }
 
-# ==============================================================================
-# VERIFY-BEFORE-RUN NOTES
-# ------------------------------------------------------------------------------
-# The `verify: true` ids are ones to confirm quickly on fred.stlouisfed.org —
-# FRED's OECD/Eurostat and a few other codes occasionally change or differ from
-# the obvious pattern. The Phase 1a extractor will be built to:
-#   1. attempt every series,
-#   2. log any id that 404s (and continue — never crash the whole run),
-#   3. write a small "series_status" table so you can see what loaded.
-# So even if a flagged id is wrong, you'll get a clean report rather than a
-# failure, and can correct it in this file and re-run just that series.
-#
-# DEFERRED TO PHASE 1b (equities / sectors, yfinance-led):
-#   equity indices (^GSPC ^FTSE ^STOXX50E), bond/credit ETFs (LQD HYG IEF TLT),
-#   the 11 SPDR sector ETFs, country ETFs (EWU EWG), a company watchlist.
-#   These are intentionally NOT here — Phase 1a is the FRED macro/rates/credit core.
-# ==============================================================================
+  # ---------------------------------------------------------- international
+  international:
+    - { id: CP0000EZ19M086NEST, name: "Euro area HICP",        region: EU, freq: M, transform: yoy }
+    - { id: LRHUTTTTEZM156S,    name: "Euro area unemployment", region: EU, freq: M, transform: level }
+    - { id: GBRCPIALLMINMEI,    name: "UK CPI",                region: UK, freq: M, transform: yoy }
+    - { id: LRHUTTTTGBM156S,    name: "UK unemployment",       region: UK, freq: M, transform: level }
+    - { id: NGDPRSAXDCGBQ,      name: "UK Real GDP",           region: UK, freq: Q, transform: yoy }

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:dc="http://purl.org/dc/elements/1.1/"
+     xmlns:content="http://purl.org/rss/1.0/modules/content/"
+     xmlns:atom="http://www.w3.org/2005/Atom" version="2.0">
+  <channel>
+    <title><![CDATA[Sample Feed]]></title>
+    <description><![CDATA[Synthetic feed for tests - not real content]]></description>
+    <link>https://example.com</link>
+    <lastBuildDate>Wed, 07 Jan 2026 09:58:19 GMT</lastBuildDate>
+    <item>
+      <title>Markets rally as rates hold steady</title>
+      <description>Equities advanced after the central bank left policy unchanged.</description>
+      <link>https://example.com/story/markets-rally</link>
+      <guid isPermaLink="false">story-0001</guid>
+      <pubDate>Wed, 07 Jan 2026 08:30:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Bonds &amp; the dollar: a &quot;wait and see&quot; mood</title>
+      <description>Traders weigh the path of inflation &amp; growth.</description>
+      <link>https://example.com/story/bonds-and-dollar</link>
+      <pubDate>Wed, 07 Jan 2026 07:15:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>A headline with no date and no guid</title>
+      <description>This item is missing its pubDate and guid, to test fallbacks.</description>
+      <link>https://example.com/story/no-date</link>
+    </item>
+  </channel>
+</rss>

@@ -1,0 +1,33 @@
+# news_feeds.yaml
+# The Financial Times RSS feeds to ingest (Phase 2).
+#
+# No API key is required - these are public RSS documents. Feeds hold only the
+# most recent ~30 items, so history is built by polling regularly (the loader
+# appends new stories and de-duplicates; it never replaces).
+#
+# Two URL shapes both work:
+#   https://www.ft.com/rss/home           (+ /uk, /international; note: no /us edition)
+#   https://www.ft.com/<section>?format=rss
+#
+# Adding or removing a feed is a one-line edit here - no code change.
+
+meta:
+  source: "Financial Times (RSS)"
+  # Sent as the HTTP User-Agent on every request. Be a polite, identifiable client.
+  user_agent: "InvestmentJournal/1.0 (personal research)"
+  poll_note: "feeds hold ~recent items only; poll regularly to accumulate history"
+
+feeds:
+  core:
+    - { name: "home",           url: "https://www.ft.com/rss/home",                  region: "global" }
+    - { name: "markets",        url: "https://www.ft.com/markets?format=rss",        region: "global" }
+    - { name: "global-economy", url: "https://www.ft.com/global-economy?format=rss", region: "global" }
+    - { name: "companies",      url: "https://www.ft.com/companies?format=rss",      region: "global" }
+
+  regional:
+    - { name: "us",             url: "https://www.ft.com/world/us?format=rss",               region: "us" }
+    - { name: "uk",             url: "https://www.ft.com/rss/home/uk",               region: "uk" }
+
+  themed:
+    - { name: "opinion",        url: "https://www.ft.com/opinion?format=rss",        region: "global" }
+    - { name: "alphaville",     url: "https://www.ft.com/alphaville?format=rss",     region: "global" }

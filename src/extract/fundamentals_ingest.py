@@ -14,6 +14,7 @@ import sys
 import time
 from datetime import date
 
+from src.common.cli import clean_argv
 from src.common.config import load_securities, iter_securities
 from src.common.reporting import build_report, write_report
 from src.extract.yf_fundamentals import fetch_fundamentals, fetch_meta, FundamentalsResult
@@ -89,7 +90,7 @@ def main() -> None:
     ap.add_argument("--only", help="comma-separated tickers for a subset (smoke run)")
     ap.add_argument("--pace", type=float, default=2.0,
                     help="seconds between tickers (raise if rate-limited)")
-    args = ap.parse_args()
+    args = ap.parse_args(clean_argv())
     only = [x.strip() for x in args.only.split(",")] if args.only else None
     sys.exit(run(only=only, pace=args.pace))
 

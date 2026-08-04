@@ -8,7 +8,7 @@ from src.common.config import load_config, iter_series
 def test_real_config_loads_and_validates():
     cfg = load_config("config/macro_series.yaml")
     series = iter_series(cfg)
-    assert len(series) == 60                      # the full catalogue
+    assert len(series) == 68                      # full catalogue (60 macro + 8 vol/inflation)
     ids = [s["id"] for s in series]
     assert len(ids) == len(set(ids))              # no duplicate ids
     assert cfg["meta"]["base_currency"] == "GBP"

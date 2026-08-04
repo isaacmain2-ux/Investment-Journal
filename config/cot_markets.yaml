@@ -1,0 +1,29 @@
+# ==============================================================================
+# cot_markets.yaml  -  CFTC Commitments of Traders (positioning)
+# Investment Journal - Addition #2
+# ------------------------------------------------------------------------------
+# Source: CFTC Traders in Financial Futures (TFF), free Socrata API, no key.
+#   dataset : Socrata resource id (yw9f-hn96 = TFF Combined; 98ig-3k9y = Futures-Only)
+#   base    : Socrata resource base URL
+# Each market:
+#   id     friendly key used in the warehouse
+#   match  case-insensitive substring of market_and_exchange_names (SoQL LIKE)
+#   label  human-readable name
+# The `match` patterns are best-effort; run `cot_preflight` once to confirm each
+# resolves to the intended contract (it prints the real matched market names).
+# ==============================================================================
+
+meta:
+  dataset: "yw9f-hn96"
+  base: "https://publicreporting.cftc.gov/resource"
+  history_start: "2010-01-01"
+  release_lag_days: 3            # Tuesday data -> Friday release
+  combined_only: true            # yw9f-hn96 holds both cuts; keep only combined futures+options
+
+markets:
+  - { id: sp500, match: "E-MINI S&P 500 STOCK INDEX", label: "E-mini S&P 500" }
+  - { id: vix,   match: "VIX FUTURES",                 label: "VIX futures" }
+  - { id: ust10, match: "UST 10Y NOTE",                label: "10-year Treasury" }
+  - { id: ust2,  match: "UST 2Y NOTE",                 label: "2-year Treasury" }
+  - { id: eur,   match: "EURO FX",                     label: "Euro FX" }
+  - { id: gbp,   match: "BRITISH POUND",               label: "British pound" }

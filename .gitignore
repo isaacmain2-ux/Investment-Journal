@@ -1,8 +1,17 @@
-.env
+# local virtual environment / caches
 .venv/
 __pycache__/
-data/
-*.duckdb
-*.sqlite
+*.pyc
+
+# the warehouse + raw caches are rebuilt in CI - never commit them
+data/warehouse.duckdb
+data/raw/
+data/cache/
+reports/
 logs/
-.ipynb_checkpoints/
+public/
+
+# local secrets (the FRED key lives in GitHub Secrets, not here)
+.env
+
+# NOTE: data/state/*.csv IS committed - it is the accumulated history

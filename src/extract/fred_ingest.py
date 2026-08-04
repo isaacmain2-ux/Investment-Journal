@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from src.common.config import load_config, iter_series
 from src.common.reporting import build_report, write_report
 from src.extract.fred_client import fetch_series
+from src.common.cli import clean_argv
 from src.load import load_fred
 
 
@@ -87,7 +88,7 @@ def run(only: list[str] | None = None,
 def main() -> None:
     ap = argparse.ArgumentParser(description="Ingest FRED series into the warehouse.")
     ap.add_argument("--only", help="comma-separated series ids to run a subset (smoke test)")
-    args = ap.parse_args()
+    args = ap.parse_args(clean_argv())
     only = [x.strip() for x in args.only.split(",")] if args.only else None
     sys.exit(run(only=only))
 

@@ -19,10 +19,14 @@ WITH pivoted AS (
         MAX(CASE WHEN series_id = 'T10Y3M'      THEN value END) AS slope_3m10y,
         MAX(CASE WHEN series_id = 'DFII10'      THEN value END) AS real_10y,
         MAX(CASE WHEN series_id = 'T10YIE'      THEN value END) AS breakeven_10y,
-        MAX(CASE WHEN series_id = 'THREEFYTP10' THEN value END) AS term_premium_10y
+        MAX(CASE WHEN series_id = 'THREEFYTP10' THEN value END) AS term_premium_10y,
+        MAX(CASE WHEN series_id = 'DFII5'        THEN value END) AS real_5y,
+        MAX(CASE WHEN series_id = 'T5YIE'        THEN value END) AS breakeven_5y,
+        MAX(CASE WHEN series_id = 'T5YIFR'       THEN value END) AS breakeven_5y5y
     FROM stg_fred_observations
     WHERE series_id IN ('DGS3MO','DGS2','DGS5','DGS10','DGS30',
-                        'T10Y2Y','T10Y3M','DFII10','T10YIE','THREEFYTP10')
+                        'T10Y2Y','T10Y3M','DFII10','T10YIE','THREEFYTP10',
+                        'DFII5','T5YIE','T5YIFR')
     GROUP BY obs_date
 )
 SELECT
