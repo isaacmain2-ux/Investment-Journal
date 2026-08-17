@@ -33,6 +33,25 @@ def _step(desc, module_args) -> bool:
     return ok
 
 
+def _link_securities(index_path):
+    """Inject a one-line link to the securities page into the macro dashboard."""
+    import re
+    try:
+        with open(index_path, encoding="utf-8") as f:
+            html = f.read()
+        if "securities.html" in html:
+            return
+        banner = ('<div style="background:#2f6f4f;color:#fff;padding:8px 14px;'
+                  'font:14px -apple-system,Segoe UI,sans-serif;text-align:center">'
+                  '<a href="securities.html" style="color:#fff;font-weight:600;'
+                  'text-decoration:none">Security selection screen \u2192</a></div>')
+        html = re.sub(r'(<body[^>]*>)', r'\g<1>' + banner, html, count=1)
+        with open(index_path, "w", encoding="utf-8") as f:
+            f.write(html)
+    except Exception as e:                       # noqa: BLE001
+        print("  (could not add securities link:", e, ")")
+
+
 def main() -> None:
     results: dict[str, bool] = {}
 
@@ -59,7 +78,7 @@ def main() -> None:
     results["Dashboard"] = _step("Dashboard", ["src.report.build_dashboard", "--out", "public"])
 
     # publish: copy the dated dashboard to index.html for GitHub Pages
-    built = sorted(glob.glob("public/dashboard_*.html"))
+    built = sorted(f for f in glob.glob("public/dashboard_*.html") if "securities" not in f)
     if built:
         shutil.copy(built[-1], "public/index.html")
         print(f"  published {built[-1]} -> public/index.html")
@@ -76,6 +95,24 @@ def main() -> None:
     except Exception as e:                      # noqa: BLE001
         print("  dump FAILED:", e)
         results["Save state"] = False
+
+    # 5. security-selection layer - rebuilds fresh each run (SEC + Yahoo both keep
+    #    full history), so no persistence and no split-brain. Non-fatal: a hiccup here
+    #    never blocks the macro dashboard.
+    print("\n=== security-selection layer ===", flush=True)
+    sec = True
+    sec &= _step("Securities: ingest universe", ["src.extract.universe_ingest"])
+    sec &= _step("Securities: metrics", ["src.transform.build_security_metrics"])
+    sec &= _step("Securities: factors", ["src.transform.build_security_factors"])
+    sec &= _step("Securities: dashboard", ["src.report.build_security_dashboard", "--out", "public"])
+    sfiles = sorted(glob.glob("public/dashboard_securities_*.html"))
+    if sfiles:
+        shutil.copy(sfiles[-1], "public/securities.html")
+        _link_securities("public/index.html")
+        print(f"  published {sfiles[-1]} -> public/securities.html")
+    else:
+        sec = False
+    results["Securities"] = sec
 
     # summary
     print("\n" + "=" * 60 + "\n  DAILY RUN SUMMARY")

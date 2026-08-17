@@ -1,0 +1,8 @@
+# Security-selection universe manifest.
+meta:
+  universe: sp500
+  constituents: config/universe_sp500.csv      # committed list: ticker,name,sector,cik
+  price_start: "2015-01-01"                    # how far back to pull prices (Yahoo, batched)
+  # SEC REQUIRES a descriptive User-Agent with a REAL contact email, or it blocks you.
+  # Replace the email below with your own before running.
+  sec_user_agent: "Investment Journal/1.0 (isaacmain2@gmail.com)"
