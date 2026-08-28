@@ -43,6 +43,11 @@ def gather(con) -> dict:
         "headlines": _df(con, "SELECT item_id, title, link, published_at, published_date, "
                               "section, region FROM fct_headlines"),
         "feed_status": _df(con, "SELECT feed, status, http_status, n_items, n_new FROM ft_feed_status"),
+        "journal_trades": _df(con, "SELECT * FROM stg_journal_trades ORDER BY trade_date, entered_at"),
+        "positions": _df(con, "SELECT * FROM fct_positions ORDER BY portfolio, ticker"),
+        "portfolio_value": _df(con, "SELECT * FROM fct_portfolio_value ORDER BY portfolio, date"),
+        "security_last_close": _df(con, "SELECT ticker, asof_date, last_close FROM fct_security_metrics "
+                                        "WHERE asof_date = (SELECT max(asof_date) FROM fct_security_metrics)"),
     }
     b["coverage"] = _coverage(con, b)
     return b
@@ -55,4 +60,5 @@ def _coverage(con, b) -> dict:
     cov["Fundamentals"] = stats.coverage(b["fundamentals"], "period_end")
     cov["FT headlines"] = stats.coverage(b["headlines"], "published_date")
     cov["Daily snapshot"] = stats.coverage(b["snapshot"], "date")
+    cov["Journal trades"] = stats.coverage(b["journal_trades"], "trade_date")
     return cov

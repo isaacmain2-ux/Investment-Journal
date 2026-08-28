@@ -85,6 +85,10 @@ def glance(bundle, insight_list):
             val = f"{fmt(row.get(c))}{unit}"
             sub = _zpct(snap[c]) if c in snap.columns else None
             kpis += kpi(label, val, sub=sub, spark_vals=col(c))
+        if "journal_value" in snap.columns and pd.notna(row.get("journal_value")):
+            kpis += kpi("Journal value (hypothetical)",
+                        f"${stats.fmt_num(row.get('journal_value'), 0)}",
+                        sub=None, spark_vals=col("journal_value"))
     kpi_block = f'<div class="kpi-row">{kpis}</div>' if kpis else no_data("Run a transform to populate the snapshot")
 
     # insights
@@ -409,6 +413,105 @@ def valuation(bundle):
     return out or no_data()
 
 
+# ===================================================================== JOURNAL
+JOURNAL_PORTFOLIO = "main"
+THESIS_TRUNC = 90
+
+
+def journal(bundle):
+    """Hypothetical journal & portfolio: KPI row, open positions, equity curve vs
+    S&P 500, and the trade log. Always labelled hypothetical - this is a paper book,
+    never to be confused with real money (see the build plan's risk register)."""
+    trades = bundle.get("journal_trades")
+    positions = bundle.get("positions")
+    pv = bundle.get("portfolio_value")
+    last_close = bundle.get("security_last_close")
+    label = ('<div class="card-sub"><strong>Hypothetical</strong> - a paper journal for '
+             'testing decision quality, not a brokerage account.</div>')
+    if (trades is None or len(trades) == 0) and (positions is None or len(positions) == 0):
+        return label + no_data("No trades logged yet - run `python -m src.journal.scan_candidates --log`")
+
+    out = label
+
+    # --- KPI row ---
+    pv_main = pv[pv.get("portfolio") == JOURNAL_PORTFOLIO].copy() if pv is not None and len(pv) else pd.DataFrame()
+    kpis = ""
+    if len(pv_main):
+        pv_main["date"] = pd.to_datetime(pv_main["date"], errors="coerce")
+        pv_main = pv_main.dropna(subset=["date"]).sort_values("date")
+        row = pv_main.iloc[-1]
+        first_total = pv_main["total_value"].iloc[0]
+        ret = (row["total_value"] / first_total - 1) if first_total else None
+        kpis += kpi("Portfolio value", f"${stats.fmt_num(row['market_value'], 0)}",
+                    spark_vals=list(pv_main["total_value"].tail(90)))
+        kpis += kpi("Total return since inception",
+                    stats.fmt_pct(ret) if ret is not None else "—")
+        kpis += kpi("Unrealised P&L", f"${stats.fmt_num(row['unrealized_pnl'], 0)}")
+        kpis += kpi("Realised P&L", f"${stats.fmt_num(row['realized_pnl_cum'], 0)}")
+        kpis += kpi("Open positions", f"{int(row['n_positions_open'])}")
+    if kpis:
+        out += f'<div class="kpi-row">{kpis}</div>'
+
+    # --- open positions table ---
+    if positions is not None and len(positions):
+        p = positions[positions.get("status") == "OPEN"].copy()
+        close_map = {}
+        if last_close is not None and len(last_close):
+            close_map = dict(zip(last_close["ticker"], last_close["last_close"]))
+        rows = []
+        today = pd.Timestamp.today().normalize()
+        for _, r in p.sort_values("ticker").iterrows():
+            cur = close_map.get(r["ticker"])
+            unreal_pct = None
+            if cur is not None and pd.notna(cur) and r.get("avg_cost"):
+                unreal_pct = cur / r["avg_cost"] - 1
+            first = pd.to_datetime(r.get("first_entry_date"), errors="coerce")
+            days_held = int((today - first).days) if pd.notna(first) else None
+            thesis = (r.get("thesis") or "")
+            thesis_s = (thesis[:THESIS_TRUNC] + "…") if len(thesis) > THESIS_TRUNC else thesis
+            rows.append([r["ticker"], stats.fmt_num(r.get("quantity_open"), 2),
+                        f"${stats.fmt_num(r.get('avg_cost'), 2)}",
+                        f"${stats.fmt_num(cur, 2)}" if cur is not None else "—",
+                        stats.fmt_pct(unreal_pct) if unreal_pct is not None else "—",
+                        f"{days_held}d" if days_held is not None else "—",
+                        r.get("conviction") or "—", thesis_s or "—"])
+        out += card("Open positions (hypothetical)",
+                    table(["Ticker", "Qty", "Avg cost", "Current", "Unrl. %", "Held",
+                          "Conviction", "Thesis"], rows))
+
+    # --- equity curve: journal total value vs S&P 500, both rebased to 100 ---
+    if len(pv_main) >= 2:
+        eq = bundle.get("equity")
+        curve = pv_main[["date", "total_value"]].copy()
+        if eq is not None and len(eq) and "ticker" in eq.columns:
+            spx = eq[eq["ticker"] == "^GSPC"][["price_date", "adj_close"]].rename(
+                columns={"price_date": "date", "adj_close": "spx"})
+            spx["date"] = pd.to_datetime(spx["date"], errors="coerce")
+            curve = curve.merge(spx, on="date", how="left")
+        ys = [c for c in ["total_value", "spx"] if c in curve.columns]
+        out += card("Equity curve vs S&P 500 (rebased to 100)",
+                    charts.line(curve, "date", ys,
+                                labels=["Journal (hypothetical)", "S&P 500"][:len(ys)],
+                                rebase=True))
+
+    # --- trade log ---
+    if trades is not None and len(trades):
+        t = trades.copy()
+        t["trade_date"] = pd.to_datetime(t["trade_date"], errors="coerce")
+        recent = t.sort_values("trade_date", ascending=False).head(25)
+        rows = []
+        for _, r in recent.iterrows():
+            thesis = (r.get("thesis") or "")
+            thesis_s = (thesis[:THESIS_TRUNC] + "…") if len(thesis) > THESIS_TRUNC else thesis
+            rows.append([stats.fmt_date(r.get("trade_date")), r.get("ticker"), r.get("action"),
+                        stats.fmt_num(r.get("quantity"), 2), f"${stats.fmt_num(r.get('price'), 2)}",
+                        r.get("conviction") or "—", thesis_s or "—"])
+        out += card("Trade log (most recent)",
+                    table(["Date", "Ticker", "Action", "Qty", "Price", "Conviction", "Thesis"], rows))
+
+    return out
+
+
 # ===================================================================== EXTREMES
 def extremes_section(bundle):
     a = bundle.get("series_analytics")
@@ -493,6 +596,7 @@ def registry():
         ("rotation", "Rotation", "Sector & style rotation", rotation),
         ("factors", "Factors", "Factor screen", factors),
         ("valuation", "Valuation", "Fundamentals & valuation", valuation),
+        ("journal", "Journal", "Investment journal (hypothetical)", journal),
         ("extremes", "Extremes", "Statistical extremes", extremes_section),
         ("headlines", "Headlines", "FT headlines", headlines),
         ("health", "Data health", "Data coverage & health", health),

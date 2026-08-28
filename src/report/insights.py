@@ -14,6 +14,11 @@ from . import stats
 
 CRIT, WARN, NOTE, INFO = 3, 2, 1, 0
 
+# journal rules: how long a stated timeframe is "well past" (calendar days), and how
+# many days of silence counts as "gone quiet"
+TIMEFRAME_DAYS = {"weeks": 45, "months": 180, "years": 540}
+JOURNAL_QUIET_DAYS = 14
+
 
 def _add(out, text, severity=NOTE, category="general"):
     out.append({"text": text, "severity": severity, "category": category})
@@ -246,6 +251,66 @@ def build(bundle: dict) -> list[dict]:
     ex = extremes(analytics, n=3)
     for name, z in ex:
         _add(out, f"{name}: {stats.fmt_sigma(z)} vs history.", NOTE, "extremes")
+
+    # --- journal: review due (position down a lot, or past its stated timeframe) ---
+    positions = bundle.get("positions")
+    last_close = bundle.get("security_last_close")
+    if positions is not None and len(positions) and "status" in positions.columns:
+        close_map = {}
+        if last_close is not None and len(last_close):
+            close_map = dict(zip(last_close["ticker"], last_close["last_close"]))
+        today = pd.Timestamp.today().normalize()
+        for _, r in positions[positions["status"] == "OPEN"].iterrows():
+            cur = close_map.get(r["ticker"])
+            avg = r.get("avg_cost")
+            unreal_pct = (cur / avg - 1) if (cur is not None and pd.notna(cur) and avg) else None
+            if unreal_pct is not None and unreal_pct <= -0.15:
+                _add(out, f"Review due: {r['ticker']} is down {stats.fmt_pct(unreal_pct)} "
+                          f"since entry (avg cost ${avg:,.2f}, now ${cur:,.2f}).", WARN, "journal")
+                continue
+            first = pd.to_datetime(r.get("first_entry_date"), errors="coerce")
+            days_held = (today - first).days if pd.notna(first) else None
+            threshold = TIMEFRAME_DAYS.get(r.get("timeframe"))
+            if days_held is not None and threshold is not None and days_held > threshold:
+                _add(out, f"Review due: {r['ticker']} has been held {days_held}d, past its "
+                          f"stated ‘{r.get('timeframe')}’ timeframe.", WARN, "journal")
+
+    # --- journal: benchmark gap (portfolio return vs S&P 500 over the same window) ---
+    pv = bundle.get("portfolio_value")
+    eq = bundle.get("equity")
+    if pv is not None and len(pv) and "portfolio" in pv.columns:
+        pm = pv[pv["portfolio"] == "main"].copy()
+        pm["date"] = pd.to_datetime(pm["date"], errors="coerce")
+        pm = pm.dropna(subset=["date"]).sort_values("date")
+        if len(pm) >= 2 and pm["total_value"].iloc[0]:
+            j_ret = pm["total_value"].iloc[-1] / pm["total_value"].iloc[0] - 1
+            if eq is not None and len(eq) and "ticker" in eq.columns:
+                spx = eq[eq["ticker"] == "^GSPC"].copy()
+                spx["price_date"] = pd.to_datetime(spx["price_date"], errors="coerce")
+                spx = spx.dropna(subset=["price_date"]).sort_values("price_date")
+                window = spx[(spx["price_date"] >= pm["date"].iloc[0]) &
+                             (spx["price_date"] <= pm["date"].iloc[-1])]
+                if len(window) >= 2 and window["adj_close"].iloc[0]:
+                    spx_ret = window["adj_close"].iloc[-1] / window["adj_close"].iloc[0] - 1
+                    gap = j_ret - spx_ret
+                    beat = "ahead of" if gap >= 0 else "behind"
+                    _add(out, f"Journal is {stats.fmt_pct(abs(gap))} {beat} the S&P 500 "
+                              f"since inception ({stats.fmt_pct(j_ret)} vs {stats.fmt_pct(spx_ret)}).",
+                         NOTE, "journal")
+
+    # --- journal: gone quiet (no new entries in a while) ---
+    jt = bundle.get("journal_trades")
+    if jt is not None and len(jt) and "trade_date" in jt.columns:
+        t = jt.copy()
+        t["trade_date"] = pd.to_datetime(t["trade_date"], errors="coerce")
+        t = t.dropna(subset=["trade_date"])
+        if len(t):
+            last_row = t.sort_values("trade_date").iloc[-1]
+            age = (pd.Timestamp.today().normalize() - last_row["trade_date"]).days
+            if age >= JOURNAL_QUIET_DAYS:
+                _add(out, f"Journal gone quiet: no new entries in {age}d "
+                          f"(last: {last_row.get('ticker')} on {stats.fmt_date(last_row['trade_date'])}).",
+                     INFO, "journal")
 
     # --- news ---
     if headlines is not None and len(headlines) and "published_date" in headlines.columns:

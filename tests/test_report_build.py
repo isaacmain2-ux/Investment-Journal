@@ -8,7 +8,8 @@ import pytest
 from src.report import build_dashboard
 
 SECTIONS = ["glance", "regime", "rates", "credit", "fx", "equity",
-            "volterm", "positioning", "rotation", "factors", "valuation", "extremes", "headlines", "health"]
+            "volterm", "positioning", "rotation", "factors", "valuation", "journal",
+            "extremes", "headlines", "health"]
 
 
 def _small_bundle():

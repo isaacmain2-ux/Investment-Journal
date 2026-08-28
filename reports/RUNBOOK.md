@@ -1,3 +1,149 @@
+# Journal & Portfolio Tracking — Runbook (Addition #4)
+
+Turns the platform from a market/screening dashboard into an actual hypothetical
+investment journal: scan the latest factor scores for the strongest candidates,
+confirm which ones you want to log, and track positions/portfolio value/P&L from
+there — entirely from the terminal, no spreadsheet ever opened.
+
+**The ledger is script-only.** `data/journal/trades.csv` is plain CSV, but it is
+never hand-edited — `src/journal/ledger.py` is the only module that touches the
+file, and it's only ever called by `add_trade.py`. See
+`reports/Journal_Portfolio_Build_Plan.md` for the full design and the one deliberate
+deviation from that plan (positions/portfolio value are built in Python, not SQL —
+average-cost lot tracking is inherently sequential; see
+`src/transform/journal_positions.py`'s docstring for why).
+
+---
+
+## 1. Copy the files in (keep the folder structure)
+
+**New files**
+```
+src\journal\__init__.py
+src\journal\ledger.py
+src\journal\scan_candidates.py
+src\journal\add_trade.py
+src\load\load_journal.py
+src\transform\journal_positions.py
+tests\test_ledger.py
+tests\test_scan_candidates.py
+tests\test_add_trade.py
+tests\test_load_journal.py
+tests\test_journal_positions.py
+tests\test_journal_positions_run.py
+tests\test_journal_insights.py
+```
+
+**Overwrite (edited) files** — each adds to what's already there:
+```
+src\transform\run_transform.py   (loads the journal ledger before the SQL layer,
+                                   builds positions/portfolio value after it)
+src\transform\derive.py          (adds journal_summary + snapshot fold-in)
+src\report\queries.py            (gathers stg_journal_trades, fct_positions,
+                                   fct_portfolio_value, latest security closes)
+src\report\sections.py           (adds the Journal section + a glance KPI)
+src\report\insights.py           (adds the review-due / benchmark-gap /
+                                   gone-quiet rules)
+```
+
+`data/journal/trades.csv` doesn't need to be seeded — it's created automatically
+on the first `add_trade`. Nothing new to `pip install`; this addition only uses
+pandas/duckdb, already dependencies.
+
+---
+
+## 2. Scan (read-only — see what the factor screen likes today)
+
+```
+cd C:\Users\isaac\OneDrive\Desktop\Investment Journal
+python -m src.journal.scan_candidates
+```
+
+Prints the top 5 S&P 500 names by composite factor score as of the latest
+`fct_security_factors` build, with the value/momentum/quality/growth breakdown and
+last close — the same ranking `build_security_dashboard`'s "Best overall" tab
+already uses, not a new engine. Already-open positions are excluded automatically.
+Add `--n 10` for more names.
+
+If the factors table is more than a few days stale, it says so — run
+`python -m src.transform.run_transform` first.
+
+---
+
+## 3. Confirm and log (interactive — the only way the ledger gets written)
+
+```
+python -m src.journal.scan_candidates --log
+```
+
+Scans, then asks which row numbers to log (`1,3`, or `n` to skip). For each
+confirmed name it prompts for quantity, price (defaults to the last close already
+in the warehouse), conviction, timeframe, catalyst and tags, pre-fills the thesis
+with the exact factor snapshot that justified the pick, and appends the row —
+`csv.DictWriter`, no spreadsheet involved.
+
+A trade outside the scanned list (a name you want to add for another reason):
+
+```
+python -m src.journal.add_trade --ticker AAPL --action BUY
+```
+
+---
+
+## 4. Build + view
+
+```
+python -m src.transform.run_transform
+python -m src.report.build_dashboard --open
+```
+
+`run_transform` now also: loads the ledger into `stg_journal_trades` (full refresh
+from the CSV each run), builds `fct_positions` (current avg-cost/quantity per
+ticker) and `fct_portfolio_value` (daily mark-to-market), and folds the main book's
+value into the daily snapshot. The dashboard gains a **Journal** section — KPIs
+(portfolio value, return since inception, unrealised/realised P&L, open positions),
+an open-positions table, an equity curve vs. the S&P 500, and the trade log — plus
+a "Journal value" tile on **At a glance**.
+
+## 5. Tests
+
+```
+pytest -q
+```
+
+`test_ledger.py`, `test_scan_candidates.py` and `test_add_trade.py` need nothing
+but pandas. `test_load_journal.py`, `test_journal_positions_run.py` and the
+`duckdb`-backed cases in `test_report_build.py` need `duckdb` installed and skip
+gracefully if it's not — this addition was built and tested in an environment with
+no network access to install `duckdb`, so those specific cases could not be run
+before delivery. Please run `pytest -q` once and let me know if anything in that
+set fails — I'll fix it.
+
+## What you'll see
+
+- A **Journal** section, clearly labelled **Hypothetical** throughout — this is a
+  paper book for testing decision quality, not a brokerage integration.
+- Insight flags once there's a position or two: **Review due** (warn — down >15%
+  since entry, or past its stated timeframe), **Journal is X% ahead/behind the
+  S&P 500** (note, once there's enough history), **Journal gone quiet** (info — no
+  new entries in 14+ days).
+
+## Notes
+
+- **Average-cost, not FIFO/specific-lot.** Deliberate — this is a journal, not a
+  tax tool.
+- **Single "main" book folded into the snapshot.** A second `portfolio` value in
+  the ledger is tracked and shown in the Journal section's own tables, just not
+  folded into the top-level snapshot KPI yet.
+- **Corporate actions (splits)** aren't handled — a known limitation, same as the
+  security-selection universe's own price data.
+- **Deferred:** a "Thesis check" rule (comparing the frozen entry snapshot against
+  today's factor read) needs a dedicated numeric field rather than parsing it back
+  out of the free-text thesis — left for a follow-up rather than built on a fragile
+  parse.
+
+---
+
 # Options Skew — Runbook (Addition #3)
 
 The volatility surface's shape across strikes — how much more the market pays for

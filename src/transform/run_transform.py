@@ -16,7 +16,9 @@ from pathlib import Path
 from src.common import reporting
 from src.load import load_fred          # reuse the warehouse connection
 from src.load import load_headlines     # ensure headline tables exist for 09_headlines
+from src.load import load_journal       # journal ledger -> stg_journal_trades
 from src.transform import derive
+from src.transform import journal_positions   # fct_positions / fct_portfolio_value (Python, not SQL)
 
 SQL_DIR = Path("src/transform/sql")
 
@@ -43,10 +45,19 @@ def run(sql_dir: Path = SQL_DIR) -> int:
     load_headlines.ensure_schema(con)
     load_headlines.ensure_feed_dim_schema(con)
 
+    # Journal ledger -> stg_journal_trades, so a run always reflects the CSV's
+    # current state (a full refresh - see load_journal.py's docstring for why).
+    load_journal.run(con)
+
     for f in files:
         print(f"Running {f.name} ...")
         for stmt in _statements(f.read_text(encoding="utf-8")):
             con.execute(stmt)
+
+    # Positions + portfolio value (Python, not SQL - see journal_positions.py's
+    # docstring for why average-cost lot tracking doesn't fit the SQL layer).
+    # Needs stg_security_prices, which universe_ingest populates independently.
+    journal_positions.run(con)
 
     print("Building regime + daily snapshot ...")
     n_regime, n_snap = derive.run(con)

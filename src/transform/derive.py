@@ -311,6 +311,49 @@ def _fold_skew(snap: pd.DataFrame, skew_sum: pd.DataFrame) -> pd.DataFrame:
     return merged.drop(columns=["_d", "capture_date"])
 
 
+JOURNAL_PORTFOLIO = "main"     # single book folded into the snapshot; other books
+                                # (if any) still show up in the Journal section's own table
+
+
+def journal_summary(pv_df: pd.DataFrame) -> pd.DataFrame:
+    """Point-in-time journal block keyed by date: the main book's mark-to-market
+    value, unrealised/realised P&L and open-position count, ready for an as-of merge
+    onto the daily snapshot. Pure; tolerant of None/empty (no ledger yet)."""
+    cols = ["date", "journal_value", "journal_unrealized_pnl", "journal_realized_pnl",
+            "journal_open_positions"]
+    if pv_df is None or len(pv_df) == 0 or "date" not in pv_df.columns:
+        return pd.DataFrame(columns=cols)
+    df = pv_df[pv_df.get("portfolio") == JOURNAL_PORTFOLIO].copy()
+    if not len(df):
+        return pd.DataFrame(columns=cols)
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    df = df.dropna(subset=["date"]).sort_values("date")
+    out = pd.DataFrame({
+        "date": df["date"],
+        "journal_value": df.get("total_value"),
+        "journal_unrealized_pnl": df.get("unrealized_pnl"),
+        "journal_realized_pnl": df.get("realized_pnl_cum"),
+        "journal_open_positions": df.get("n_positions_open"),
+    })
+    return out[cols].reset_index(drop=True)
+
+
+def _fold_journal(snap: pd.DataFrame, journal_sum: pd.DataFrame) -> pd.DataFrame:
+    """Point-in-time as-of merge of the journal block onto the daily snapshot (latest
+    valuation on or before each date). Datetime resolution normalised, same fix as
+    _fold_skew/_fold_positioning - merge_asof needs identical [ns] units on both sides."""
+    snap = snap.sort_values("date").reset_index(drop=True)
+    snap["_d"] = pd.to_datetime(snap["date"]).astype("datetime64[ns]")
+    journal_sum = journal_sum.sort_values("date").copy()
+    journal_sum["date"] = pd.to_datetime(journal_sum["date"]).astype("datetime64[ns]")
+    merged = pd.merge_asof(snap, journal_sum, left_on="_d", right_on="date",
+                           direction="backward", suffixes=("", "_journal"))
+    merged = merged.drop(columns=["_d"])
+    if "date_journal" in merged.columns:
+        merged = merged.drop(columns=["date_journal"])
+    return merged
+
+
 def _read(con, sql):
     """Query helper that tolerates a table not existing yet (returns None)."""
     try:
@@ -363,6 +406,14 @@ def run(con) -> tuple[int, int]:
         sk_sum = skew_summary(sk)
         if len(sk_sum):
             snap = _fold_skew(snap, sk_sum)
+
+    # optional journal block - point-in-time as-of merge on date (main book only)
+    pv = _read(con, "SELECT portfolio, date, total_value, unrealized_pnl, "
+                    "realized_pnl_cum, n_positions_open FROM fct_portfolio_value")
+    if pv is not None:
+        j_sum = journal_summary(pv)
+        if len(j_sum):
+            snap = _fold_journal(snap, j_sum)
 
     con.register("regime_df", regime)
     con.execute("DROP TABLE IF EXISTS fct_regime")
